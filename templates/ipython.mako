@@ -60,30 +60,8 @@ with open( os.path.join( our_template_dir, 'notebook.ipynb' ), 'r') as nb_handle
     empty_nb = nb_handle.read()
 empty_nb = empty_nb % notebook_id
 
-
-# Find all ports that are already occupied
-cmd_netstat = shlex.split("netstat -tuln")
-p1 = subprocess.Popen(cmd_netstat, stdout=subprocess.PIPE)
-
-occupied_ports = set()
-for line in p1.stdout.read().split('\n'):
-    if line.startswith('tcp') or line.startswith('tcp6'):
-        col = line.split()
-        local_address = col[3]
-        local_port = local_address.split(':')[-1]
-        occupied_ports.add( int(local_port) )
-
-# Generate random free port number for our docker container
-while True:
-    PORT = random.randrange(10000,15000)
-    if PORT not in occupied_ports:
-        break
-
-HOST = request.host
-# Strip out port, we just want the URL this galaxy server was accessed at.
-if ':' in HOST:
-    HOST = HOST[0:HOST.index(':')]
-
+proxy_request = trans.app.proxy_manager.setup_proxy( trans )
+PORT = proxy_request[ 'proxied_port' ]
 temp_dir = os.path.abspath( tempfile.mkdtemp() )
 
 try:
@@ -131,24 +109,12 @@ if hda.datatype.__class__.__name__ != "Ipynb":
 else:
     shutil.copy( hda.file_name, empty_nb_path )
 
-docker_cmd = '%s run -d --sig-proxy=true -p %s:6789 -v "%s:/import/" %s' % \
+docker_cmd = 'sudo %s run -d --sig-proxy=true -p %s:6789 -v "%s:/import/" %s' % \
     (ipy_viz_config.get("docker", "command"), PORT, temp_dir, ipy_viz_config.get("docker", "image"))
 
-# Set our proto so passwords don't go in clear
-if ipy_viz_config.getboolean("main", "ssl"):
-    PROTO = "https"
-else:
-    PROTO = "http"
-
-# Access URLs for the notebook from within galaxy.
-if ipy_viz_config.getboolean("main", "apache_urls"):
-    notebook_access_url = "%s://%s/ipython/%s/notebooks/ipython_galaxy_notebook.ipynb" % ( PROTO, HOST, PORT )
-    notebook_login_url = "%s://%s/ipython/%s/login?next=%%2Fipython%%2F%s%%2Fnotebooks%%2Fipython_galaxy_notebook.ipynb" % ( PROTO, HOST, PORT, PORT )
-    apache_urls_jsvar = "true"
-else:
-    notebook_access_url = "%s://%s:%s/ipython/%s/notebooks/ipython_galaxy_notebook.ipynb" % ( PROTO, HOST, PORT, PORT )
-    notebook_login_url = "%s://%s:%s/ipython/%s/login?next=%%2Fipython%%2F%s%%2Fnotebooks%%2Fipython_galaxy_notebook.ipynb" % ( PROTO, HOST, PORT, PORT, PORT )
-    apache_urls_jsvar = "false"
+notebook_access_url = "%s/ipython/%s/notebooks/ipython_galaxy_notebook.ipynb" % ( proxy_request[ 'proxy_url' ], PORT )
+notebook_login_url = "%s/ipython/%s/login?next=%%2Fipython%%2F%s%%2Fnotebooks%%2Fipython_galaxy_notebook.ipynb" % ( proxy_request[ 'proxy_url' ], PORT, PORT )
+apache_urls_jsvar = "false"
 subprocess.call(docker_cmd, shell=True)
 
 # We need to wait until the Image and IPython in loaded
