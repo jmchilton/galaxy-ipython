@@ -30,29 +30,6 @@ def load_notebook():
     empty_nb = empty_nb % notebook_id
     return empty_nb
 
-def proxy_request_port():
-    """
-        Refactor of our port getting...eventually this will be replaced with an API call instead.
-    """
-    # Find all ports that are already occupied
-    cmd_netstat = shlex.split("netstat -tuln")
-    p1 = subprocess.Popen(cmd_netstat, stdout=subprocess.PIPE)
-
-    occupied_ports = set()
-    for line in p1.stdout.read().split('\n'):
-        if line.startswith('tcp') or line.startswith('tcp6'):
-            col = line.split()
-            local_address = col[3]
-            local_port = local_address.split(':')[-1]
-            occupied_ports.add( int(local_port) )
-
-    # Generate random free port number for our docker container
-    while True:
-        port = random.randrange(10000,15000)
-        if port not in occupied_ports:
-            break
-    return port
-
 def generate_pasword(length=12):
     return ''.join(random.choice('0123456789abcdefghijklmnopqrstuvwxyz') for _ in range(length))
 
@@ -84,7 +61,8 @@ ipy_viz_config.read( os.path.join( our_config_dir, "ipython.conf" ) )
 PASSWORD_AUTH = ipy_viz_config.getboolean("main", "password_auth")
 APACHE_URLS = ipy_viz_config.getboolean("main", "apache_urls")
 SSL_URLS = ipy_viz_config.getboolean("main", "ssl")
-PORT = proxy_request_port()
+proxy_request = trans.app.proxy_manager.setup_proxy( trans )  
+PORT = proxy_request[ 'proxied_port' ]
 HOST = request.host
 # Strip out port, we just want the URL this galaxy server was accessed at.
 if ':' in HOST:
@@ -131,19 +109,8 @@ else:
 docker_cmd = '%s run -d --sig-proxy=true -p %s:6789 -v "%s:/import/" %s' % \
     (ipy_viz_config.get("docker", "command"), PORT, temp_dir, ipy_viz_config.get("docker", "image"))
 
-# Set our proto so passwords don't go in clear
-if SSL_URLS:
-    PROTO = "https"
-else:
-    PROTO = "http"
-
-# Access URLs for the notebook from within galaxy.
-if APACHE_URLS:
-    notebook_access_url = "%s://%s/ipython/%s/notebooks/ipython_galaxy_notebook.ipynb" % ( PROTO, HOST, PORT )
-    notebook_login_url = "%s://%s/ipython/%s/login" % ( PROTO, HOST, PORT )
-else:
-    notebook_access_url = "%s://%s:%s/ipython/%s/notebooks/ipython_galaxy_notebook.ipynb" % ( PROTO, HOST, PORT, PORT )
-    notebook_login_url = "%s://%s:%s/ipython/%s/login" % ( PROTO, HOST, PORT, PORT )
+notebook_access_url = "%s/ipython/%s/notebooks/ipython_galaxy_notebook.ipynb" % ( proxy_request[ 'proxy_url' ], PORT )
+notebook_login_url = "%s/ipython/%s/login" % ( proxy_request[ 'proxy_url' ], PORT )
 subprocess.call(docker_cmd, shell=True)
 
 %>

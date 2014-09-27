@@ -42,6 +42,9 @@ function test_ie_availability(url){
         $.ajax({
             type: "GET",
             url: url,
+            xhrFields: {
+                withCredentials: true
+            },
             success: function(){
                 clearInterval(interval);
                 return true;
@@ -70,12 +73,15 @@ function load_notebook(password_auth, password, notebook_login_url, notebook_acc
             $.ajax({
                 type: "GET",
                 url: notebook_access_url,
+                xhrFields: {
+                    withCredentials: true
+                },
                 success: function(){
                     clearInterval(interval);
                     _handle_notebook_loading(password_auth, password, notebook_login_url, notebook_access_url, apache_urls);
                 },
                 error: function(){
-                    console.log("Some error");
+                    console.log("Failed to get access to " + notebook_access_url);
                 }
             });
         }, 500);
